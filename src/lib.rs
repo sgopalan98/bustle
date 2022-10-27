@@ -168,6 +168,9 @@ pub trait CollectionHandle {
     ///
     /// Should **not** insert the key if it did not exist.
     fn update(&mut self, key: &Self::Key) -> bool;
+
+    /// Close the server thread.
+    fn finish(&mut self);
 }
 
 /// Information about a measurement.
