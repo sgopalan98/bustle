@@ -456,7 +456,6 @@ fn mix<H: CollectionHandle>(
         .enumerate()
     {
         if i == ops {
-            tbl.finish();
             break;
         }
 
@@ -532,4 +531,5 @@ fn mix<H: CollectionHandle>(
             }
         }
     }
+    tbl.finish();
 }
