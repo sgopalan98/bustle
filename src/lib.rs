@@ -170,7 +170,10 @@ pub trait CollectionHandle {
     fn update(&mut self, key: &Self::Key) -> bool;
 
     /// Close the server thread.
-    fn finish(&mut self);
+    fn close(&mut self);
+
+    /// Clear the hashmap and close server thread.
+    fn clear(&mut self);
 }
 
 /// Information about a measurement.
@@ -354,6 +357,7 @@ impl Workload {
                     let inserted = table.insert(key);
                     assert!(inserted);
                 }
+                table.close();
                 keys
             }));
         }
@@ -380,7 +384,8 @@ impl Workload {
                     ops_per_thread,
                     prefill_per_thread,
                     barrier,
-                )
+                );
+                table.clear();
             }));
         }
 
@@ -531,5 +536,4 @@ fn mix<H: CollectionHandle>(
             }
         }
     }
-    tbl.finish();
 }
