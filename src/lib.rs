@@ -174,9 +174,6 @@ pub trait CollectionHandle {
 
     /// Close the server thread.
     fn close(&mut self);
-
-    /// Clear the hashmap and close server thread.
-    fn clear(&mut self);
 }
 
 /// Information about a measurement.
@@ -388,7 +385,7 @@ impl Workload {
                     prefill_per_thread,
                     barrier,
                 );
-                table.clear();
+                table.close();
             }));
         }
 
