@@ -344,7 +344,7 @@ impl Workload {
             .collect();
 
         info!("constructing initial table");
-        let table = Arc::new(T::with_capacity_and_threads(initial_capacity, self.threads * 2));
+        let table = Arc::new(T::with_capacity_and_threads(initial_capacity, self.threads));
 
         // And fill it
         let prefill_per_thread = prefill / self.threads;
