@@ -576,7 +576,7 @@ fn mix_multiple<H: CollectionHandle>(
     });
     workload_scope.wait();
 
-    let all_ops: Vec<&Operation> = (0..(ops/op_mix.len())).flat_map(|_| op_mix.iter()).collect();
+    let all_ops: Vec<&Operation> = (0..((ops + op_mix.len() - 1)/op_mix.len())).flat_map(|_| op_mix.iter()).collect();
     let mut index = 0;
     loop {
         println!("Index is {} ops is {}\n", index, ops);
