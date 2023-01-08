@@ -172,6 +172,11 @@ pub trait CollectionHandle {
     /// Should **not** insert the key if it did not exist.
     fn update(&mut self, key: &Self::Key) -> bool;
 
+    /// Do the operations mentioned in operations
+    ///
+    /// Should return vector of results for each of the operations.
+    fn execute(&mut self, operations: Vec<String>) -> Vec<bool>;
+
     /// Close the server thread.
     fn close(&mut self);
 }
@@ -377,7 +382,7 @@ impl Workload {
             let barrier = Arc::clone(&barrier);
             mix_threads.push(std::thread::spawn(move || {
                 let mut table = table.pin();
-                mix(
+                mix_multiple(
                     &mut table,
                     &keys,
                     &op_mix,
@@ -535,5 +540,107 @@ fn mix<H: CollectionHandle>(
                 }
             }
         }
+    }
+}
+
+
+fn mix_multiple<H: CollectionHandle>(
+    tbl: &mut H,
+    keys: &[H::Key],
+    op_mix: &[Operation],
+    ops: usize,
+    prefilled: usize,
+    barrier: Arc<Barrier>,
+) where
+    H::Key: std::fmt::Debug,
+{
+    // Invariant: erase_seq <= insert_seq
+    // Invariant: insert_seq < numkeys
+    let nkeys = keys.len();
+    let mut erase_seq = 0;
+    let mut insert_seq = prefilled;
+    let mut find_seq = 0;
+
+    // We're going to use a very simple LCG to pick random keys.
+    // We want it to be _super_ fast so it doesn't add any overhead.
+    assert!(nkeys.is_power_of_two());
+    assert!(nkeys > 4);
+    assert_eq!(op_mix.len(), 100);
+    let a = nkeys / 2 + 1;
+    let c = nkeys / 4 - 1;
+    let find_seq_mask = nkeys - 1;
+
+    // The elapsed time is measured by the lifetime of `workload_scope`.
+    let workload_scope = scopeguard::guard(barrier, |barrier| {
+        barrier.wait();
+    });
+    workload_scope.wait();
+
+    let all_ops: Vec<&Operation> = (0..(ops/op_mix.len())).flat_map(|_| op_mix.iter()).collect();
+    let mut index = 0;
+    loop {
+        if index >= ops {
+            break;
+        }
+        
+        let grouped_ops = &all_ops[index..index+4];
+        for op in grouped_ops {
+            let mut operations:Vec<String>= vec![];
+            let mut assertions = vec![];
+            match op {
+                Operation::Read => {
+                    let should_find = find_seq >= erase_seq && find_seq < insert_seq;
+                    if find_seq >= erase_seq {
+                        operations.push(format!("GET {:?}", &keys[find_seq]));
+                        assertions.push(should_find);
+                    } else {
+                        // due to upserts, we may _or may not_ find the key
+                    }
+    
+                    // Twist the LCG since we used find_seq
+                    find_seq = (a * find_seq + c) & find_seq_mask;
+                }
+                Operation::Insert => {
+                    operations.push(format!("INSERT {:?}", &keys[insert_seq]));
+                    assertions.push(true);
+                    insert_seq += 1;
+                }
+                Operation::Remove => {
+                    if erase_seq == insert_seq {
+                        // If `erase_seq` == `insert_eq`, the table should be empty.
+                        // let removed = tbl.remove(&keys[find_seq]);
+                        operations.push(format!("REMOVE {:?}", &keys[find_seq]));
+                        assertions.push(false);
+                        // Twist the LCG since we used find_seq
+                        find_seq = (a * find_seq + c) & find_seq_mask;
+                    } else {
+                        operations.push(format!("REMOVE {:?}", &keys[find_seq]));
+                        assertions.push(true);
+                        erase_seq += 1;
+                    }
+                }
+                Operation::Update => {
+                    // Same as find, except we update to the same default value
+                    let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
+                    if find_seq >= erase_seq {
+                        operations.push(format!("UPDATE {:?}", &keys[find_seq]));
+                        assertions.push(should_exist);
+                    } else {
+                        // due to upserts, we may or may not have updated an existing key
+                    }
+    
+                    // Twist the LCG since we used find_seq
+                    find_seq = (a * find_seq + c) & find_seq_mask;
+                }
+                Operation::Upsert => {
+                    
+                }
+            }
+            let results = tbl.execute(operations);
+            for index in 0..assertions.len() {
+                assert_eq!(results[index], assertions[index], "Something failed");
+            }
+        }
+        index += 5;
     }
 }
