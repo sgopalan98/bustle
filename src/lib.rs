@@ -583,7 +583,8 @@ fn mix_multiple<H: CollectionHandle>(
             break;
         }
         
-        let grouped_ops = &all_ops[index..index+4];
+        let grouped_ops = &all_ops[index..index+5];
+        println!("LENGTH IS {}\n", grouped_ops.len());
         for op in grouped_ops {
             let mut operations:Vec<String>= vec![];
             let mut assertions = vec![];
@@ -600,11 +601,13 @@ fn mix_multiple<H: CollectionHandle>(
                     // Twist the LCG since we used find_seq
                     find_seq = (a * find_seq + c) & find_seq_mask;
                 }
+
                 Operation::Insert => {
                     operations.push(format!("INSERT {:?}", &keys[insert_seq]));
                     assertions.push(true);
                     insert_seq += 1;
                 }
+
                 Operation::Remove => {
                     if erase_seq == insert_seq {
                         // If `erase_seq` == `insert_eq`, the table should be empty.
@@ -619,6 +622,7 @@ fn mix_multiple<H: CollectionHandle>(
                         erase_seq += 1;
                     }
                 }
+
                 Operation::Update => {
                     // Same as find, except we update to the same default value
                     let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
@@ -632,6 +636,7 @@ fn mix_multiple<H: CollectionHandle>(
                     // Twist the LCG since we used find_seq
                     find_seq = (a * find_seq + c) & find_seq_mask;
                 }
+                
                 Operation::Upsert => {
                     
                 }
