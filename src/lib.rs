@@ -584,10 +584,10 @@ fn mix_multiple<H: CollectionHandle>(
         }
         
         let grouped_ops = &all_ops[index..index+5];
-        println!("LENGTH IS {}\n", grouped_ops.len());
+        let mut operations:Vec<String>= vec![];
+        let mut assertions = vec![];
         for op in grouped_ops {
-            let mut operations:Vec<String>= vec![];
-            let mut assertions = vec![];
+            
             match op {
                 Operation::Read => {
                     let should_find = find_seq >= erase_seq && find_seq < insert_seq;
@@ -641,11 +641,11 @@ fn mix_multiple<H: CollectionHandle>(
                     
                 }
             }
-            let results = tbl.execute(operations);
+        }
+        let results = tbl.execute(operations);
             for index in 0..assertions.len() {
                 assert_eq!(results[index], assertions[index], "Something failed");
             }
-        }
         index += 5;
     }
 }
