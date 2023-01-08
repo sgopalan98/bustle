@@ -617,7 +617,7 @@ fn mix_multiple<H: CollectionHandle>(
                         // Twist the LCG since we used find_seq
                         find_seq = (a * find_seq + c) & find_seq_mask;
                     } else {
-                        operations.push(format!("REMOVE {:?}", &keys[find_seq]));
+                        operations.push(format!("REMOVE {:?}", &keys[erase_seq]));
                         assertions.push(true);
                         erase_seq += 1;
                     }
@@ -643,9 +643,9 @@ fn mix_multiple<H: CollectionHandle>(
             }
         }
         let results = tbl.execute(operations);
-            for index in 0..assertions.len() {
-                assert_eq!(results[index], assertions[index], "Something failed");
-            }
+        for index in 0..assertions.len() {
+            assert_eq!(results[index], assertions[index], "Something failed");
+        }
         index += 5;
     }
 }
