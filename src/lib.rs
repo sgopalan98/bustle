@@ -582,8 +582,10 @@ fn mix_multiple<H: CollectionHandle>(
         if index >= ops {
             break;
         }
+
+        let final_index = std::cmp::min(index + 5, ops);
         
-        let grouped_ops = &all_ops[index..index+5];
+        let grouped_ops = &all_ops[index..final_index];
         let mut operations:Vec<String>= vec![];
         let mut assertions = vec![];
         for op in grouped_ops {
