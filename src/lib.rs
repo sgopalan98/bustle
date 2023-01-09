@@ -583,7 +583,7 @@ fn mix_multiple<H: CollectionHandle>(
             break;
         }
 
-        let final_index = std::cmp::min(index + 100, ops);
+        let final_index = std::cmp::min(index + 300, ops);
         let grouped_ops = &all_ops[index..final_index];
         let mut operations:Vec<String>= vec![];
         let mut assertions = vec![];
@@ -647,6 +647,6 @@ fn mix_multiple<H: CollectionHandle>(
         for index in 0..assertions.len() {
             assert_eq!(results[index], assertions[index], "Something failed");
         }
-        index += 100;
+        index += 300;
     }
 }
