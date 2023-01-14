@@ -27,7 +27,7 @@
     rustdoc::broken_intra_doc_links
 )]
 
-use std::{sync::Arc, sync::Barrier, time::Duration};
+use std::{sync::Arc, sync::Barrier, time::Duration, vec};
 
 use rand::prelude::*;
 use tracing::{debug, info, info_span};
@@ -175,7 +175,7 @@ pub trait CollectionHandle {
     /// Do the operations mentioned in operations
     ///
     /// Should return vector of results for each of the operations.
-    fn execute(&mut self, operations: Vec<String>) -> Vec<bool>;
+    fn execute(&mut self, operations: Vec<u8>, keys: Vec<&Self::Key>) -> Vec<bool>;
 
     /// Close the server thread.
     fn close(&mut self);
@@ -582,18 +582,21 @@ fn mix_multiple<H: CollectionHandle>(
         if index >= ops {
             break;
         }
+        let mut operations = Vec::new();
+        let mut mul_keys = Vec::new();
 
-        let final_index = std::cmp::min(index + 300, ops);
+        let mut assertions = Vec::new();
+
+        let final_index = std::cmp::min(index + 100, ops);
         let grouped_ops = &all_ops[index..final_index];
-        let mut operations:Vec<String>= vec![];
-        let mut assertions = vec![];
-        for op in grouped_ops {
+        for (index, op) in grouped_ops.iter().enumerate() {
             
             match op {
                 Operation::Read => {
                     let should_find = find_seq >= erase_seq && find_seq < insert_seq;
                     if find_seq >= erase_seq {
-                        operations.push(format!("GET {:?}", &keys[find_seq]));
+                        operations.push(0);
+                        mul_keys.push(&keys[find_seq]);
                         assertions.push(should_find);
                     } else {
                         // due to upserts, we may _or may not_ find the key
@@ -604,8 +607,11 @@ fn mix_multiple<H: CollectionHandle>(
                 }
 
                 Operation::Insert => {
-                    operations.push(format!("INSERT {:?}", &keys[insert_seq]));
+
+                    operations.push(1);
+                    mul_keys.push(&keys[insert_seq]);
                     assertions.push(true);
+
                     insert_seq += 1;
                 }
 
@@ -613,12 +619,15 @@ fn mix_multiple<H: CollectionHandle>(
                     if erase_seq == insert_seq {
                         // If `erase_seq` == `insert_eq`, the table should be empty.
                         // let removed = tbl.remove(&keys[find_seq]);
-                        operations.push(format!("REMOVE {:?}", &keys[find_seq]));
+                        operations.push(2);
+                        mul_keys.push(&keys[find_seq]);
                         assertions.push(false);
+
                         // Twist the LCG since we used find_seq
                         find_seq = (a * find_seq + c) & find_seq_mask;
                     } else {
-                        operations.push(format!("REMOVE {:?}", &keys[erase_seq]));
+                        operations.push(2);
+                        mul_keys.push(&keys[erase_seq]);
                         assertions.push(true);
                         erase_seq += 1;
                     }
@@ -628,7 +637,8 @@ fn mix_multiple<H: CollectionHandle>(
                     // Same as find, except we update to the same default value
                     let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
                     if find_seq >= erase_seq {
-                        operations.push(format!("UPDATE {:?}", &keys[find_seq]));
+                        operations.push(3);
+                        mul_keys.push(&keys[find_seq]);
                         assertions.push(should_exist);
                     } else {
                         // due to upserts, we may or may not have updated an existing key
@@ -643,7 +653,7 @@ fn mix_multiple<H: CollectionHandle>(
                 }
             }
         }
-        let results = tbl.execute(operations);
+        let results = tbl.execute(operations, mul_keys);
         for index in 0..assertions.len() {
             assert_eq!(results[index], assertions[index], "Something failed");
         }
