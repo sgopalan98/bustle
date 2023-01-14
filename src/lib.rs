@@ -358,10 +358,31 @@ impl Workload {
             let table = Arc::clone(&table);
             prefillers.push(std::thread::spawn(move || {
                 let mut table = table.pin();
-                for key in &keys[0..prefill_per_thread] {
-                    let inserted = table.insert(key);
-                    assert!(inserted);
+                let mut start_index = 0;
+
+                loop {
+                    if start_index >= prefill_per_thread {
+                        break;
+                    }
+
+                    let max_index = std::cmp::min(start_index + 100, prefill_per_thread);
+
+                    let mut operations = Vec::new();
+                    let mut mul_keys = Vec::new();
+
+                    for index in start_index..max_index {
+                        operations.push(2); 
+                        mul_keys.push(&keys[index]);
+                    }
+
+                    let results = table.execute(operations, mul_keys);
+                    for result in results {
+                        assert!(result);
+                    }
+
+                    start_index = start_index + 100;
                 }
+
                 table.close();
                 keys
             }));
@@ -595,7 +616,7 @@ fn mix_multiple<H: CollectionHandle>(
                 Operation::Read => {
                     let should_find = find_seq >= erase_seq && find_seq < insert_seq;
                     if find_seq >= erase_seq {
-                        operations.push(0);
+                        operations.push(1);
                         mul_keys.push(&keys[find_seq]);
                         assertions.push(should_find);
                     } else {
@@ -608,7 +629,7 @@ fn mix_multiple<H: CollectionHandle>(
 
                 Operation::Insert => {
 
-                    operations.push(1);
+                    operations.push(2);
                     mul_keys.push(&keys[insert_seq]);
                     assertions.push(true);
 
@@ -619,14 +640,14 @@ fn mix_multiple<H: CollectionHandle>(
                     if erase_seq == insert_seq {
                         // If `erase_seq` == `insert_eq`, the table should be empty.
                         // let removed = tbl.remove(&keys[find_seq]);
-                        operations.push(2);
+                        operations.push(3);
                         mul_keys.push(&keys[find_seq]);
                         assertions.push(false);
 
                         // Twist the LCG since we used find_seq
                         find_seq = (a * find_seq + c) & find_seq_mask;
                     } else {
-                        operations.push(2);
+                        operations.push(3);
                         mul_keys.push(&keys[erase_seq]);
                         assertions.push(true);
                         erase_seq += 1;
@@ -637,7 +658,7 @@ fn mix_multiple<H: CollectionHandle>(
                     // Same as find, except we update to the same default value
                     let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
                     if find_seq >= erase_seq {
-                        operations.push(3);
+                        operations.push(4);
                         mul_keys.push(&keys[find_seq]);
                         assertions.push(should_exist);
                     } else {
