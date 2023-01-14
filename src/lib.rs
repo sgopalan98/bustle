@@ -598,9 +598,9 @@ fn mix_multiple<H: CollectionHandle>(
     workload_scope.wait();
 
     let all_ops: Vec<&Operation> = (0..((ops + op_mix.len() - 1)/op_mix.len())).flat_map(|_| op_mix.iter()).collect();
-    let mut index = 0;
+    let mut start_index = 0;
     loop {
-        if index >= ops {
+        if start_index >= ops {
             break;
         }
         let mut operations = Vec::new();
@@ -608,8 +608,8 @@ fn mix_multiple<H: CollectionHandle>(
 
         let mut assertions = Vec::new();
 
-        let final_index = std::cmp::min(index + 100, ops);
-        let grouped_ops = &all_ops[index..final_index];
+        let final_index = std::cmp::min(start_index + 100, ops);
+        let grouped_ops = &all_ops[start_index..final_index];
         for (index, op) in grouped_ops.iter().enumerate() {
             
             match op {
@@ -678,6 +678,6 @@ fn mix_multiple<H: CollectionHandle>(
         for index in 0..assertions.len() {
             assert_eq!(results[index], assertions[index], "Something failed");
         }
-        index += 300;
+        start_index += 100;
     }
 }
