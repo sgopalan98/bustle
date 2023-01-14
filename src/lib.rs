@@ -411,7 +411,9 @@ impl Workload {
                     prefill_per_thread,
                     barrier,
                 );
-                table.close();
+                let close_operation = Vec::new();
+                let close_key = Vec::new();
+                table.execute(close_operation, close_key)
             }));
         }
 
@@ -681,7 +683,7 @@ fn mix_multiple<H: CollectionHandle>(
                 assertions = Vec::new();
             }
     }
-    
+
     if operations.len() != 0 {
         let results = tbl.execute(operations, mul_keys);
         for index in 0..assertions.len() {
