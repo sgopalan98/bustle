@@ -597,21 +597,18 @@ fn mix_multiple<H: CollectionHandle>(
     });
     workload_scope.wait();
 
-    let all_ops: Vec<&Operation> = (0..((ops + op_mix.len() - 1)/op_mix.len())).flat_map(|_| op_mix.iter()).collect();
-    let mut start_index = 0;
-    loop {
-        if start_index >= ops {
-            break;
-        }
-        let mut operations = Vec::new();
-        let mut mul_keys = Vec::new();
+    let mut operations = Vec::new();
+    let mut mul_keys = Vec::new();
+    let mut assertions = Vec::new();
 
-        let mut assertions = Vec::new();
+    for (i, op) in (0..(ops / op_mix.len()))
+        .flat_map(|_| op_mix.iter())
+        .enumerate() {
 
-        let final_index = std::cmp::min(start_index + 100, ops);
-        let grouped_ops = &all_ops[start_index..final_index];
-        for (index, op) in grouped_ops.iter().enumerate() {
-            
+            if i == ops {
+                break;
+            }
+
             match op {
                 Operation::Read => {
                     let should_find = find_seq >= erase_seq && find_seq < insert_seq;
@@ -673,11 +670,22 @@ fn mix_multiple<H: CollectionHandle>(
                     
                 }
             }
-        }
+            // If 100 operations are complete, execute.
+            if operations.len() == 100 {
+                let results = tbl.execute(operations, mul_keys);
+                for index in 0..assertions.len() {
+                    assert_eq!(results[index], assertions[index], "Something failed");
+                }
+                operations = Vec::new();
+                mul_keys = Vec::new();
+                assertions = Vec::new();
+            }
+    }
+    
+    if operations.len() != 0 {
         let results = tbl.execute(operations, mul_keys);
         for index in 0..assertions.len() {
             assert_eq!(results[index], assertions[index], "Something failed");
         }
-        start_index += 100;
     }
 }
