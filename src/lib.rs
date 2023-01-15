@@ -383,7 +383,9 @@ impl Workload {
                     start_index = start_index + 100;
                 }
 
-                table.close();
+                let close_operation = Vec::new();
+                let close_key = Vec::new();
+                table.execute(close_operation, close_key);
                 keys
             }));
         }
@@ -413,7 +415,7 @@ impl Workload {
                 );
                 let close_operation = Vec::new();
                 let close_key = Vec::new();
-                table.execute(close_operation, close_key)
+                table.execute(close_operation, close_key);
             }));
         }
 
