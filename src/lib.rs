@@ -371,7 +371,7 @@ impl Workload {
                     let mut mul_keys = Vec::new();
 
                     for index in start_index..max_index {
-                        operations.push(2); 
+                        operations.push(2);
                         mul_keys.push(&keys[index]);
                     }
 
@@ -568,7 +568,6 @@ fn mix<H: CollectionHandle>(
     }
 }
 
-
 fn mix_multiple<H: CollectionHandle>(
     tbl: &mut H,
     keys: &[H::Key],
@@ -607,83 +606,80 @@ fn mix_multiple<H: CollectionHandle>(
 
     for (i, op) in (0..(ops / op_mix.len()))
         .flat_map(|_| op_mix.iter())
-        .enumerate() {
+        .enumerate()
+    {
+        if i == ops {
+            break;
+        }
 
-            if i == ops {
-                break;
-            }
-
-            match op {
-                Operation::Read => {
-                    let should_find = find_seq >= erase_seq && find_seq < insert_seq;
-                    if find_seq >= erase_seq {
-                        operations.push(1);
-                        mul_keys.push(&keys[find_seq]);
-                        assertions.push(should_find);
-                    } else {
-                        // due to upserts, we may _or may not_ find the key
-                    }
-    
-                    // Twist the LCG since we used find_seq
-                    find_seq = (a * find_seq + c) & find_seq_mask;
+        match op {
+            Operation::Read => {
+                let should_find = find_seq >= erase_seq && find_seq < insert_seq;
+                if find_seq >= erase_seq {
+                    operations.push(1);
+                    mul_keys.push(&keys[find_seq]);
+                    assertions.push(should_find);
+                } else {
+                    // due to upserts, we may _or may not_ find the key
                 }
 
-                Operation::Insert => {
+                // Twist the LCG since we used find_seq
+                find_seq = (a * find_seq + c) & find_seq_mask;
+            }
 
-                    operations.push(2);
-                    mul_keys.push(&keys[insert_seq]);
+            Operation::Insert => {
+                operations.push(2);
+                mul_keys.push(&keys[insert_seq]);
+                assertions.push(true);
+
+                insert_seq += 1;
+            }
+
+            Operation::Remove => {
+                if erase_seq == insert_seq {
+                    // If `erase_seq` == `insert_eq`, the table should be empty.
+                    // let removed = tbl.remove(&keys[find_seq]);
+                    operations.push(3);
+                    mul_keys.push(&keys[find_seq]);
+                    assertions.push(false);
+
+                    // Twist the LCG since we used find_seq
+                    find_seq = (a * find_seq + c) & find_seq_mask;
+                } else {
+                    operations.push(3);
+                    mul_keys.push(&keys[erase_seq]);
                     assertions.push(true);
-
-                    insert_seq += 1;
-                }
-
-                Operation::Remove => {
-                    if erase_seq == insert_seq {
-                        // If `erase_seq` == `insert_eq`, the table should be empty.
-                        // let removed = tbl.remove(&keys[find_seq]);
-                        operations.push(3);
-                        mul_keys.push(&keys[find_seq]);
-                        assertions.push(false);
-
-                        // Twist the LCG since we used find_seq
-                        find_seq = (a * find_seq + c) & find_seq_mask;
-                    } else {
-                        operations.push(3);
-                        mul_keys.push(&keys[erase_seq]);
-                        assertions.push(true);
-                        erase_seq += 1;
-                    }
-                }
-
-                Operation::Update => {
-                    // Same as find, except we update to the same default value
-                    let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
-                    if find_seq >= erase_seq {
-                        operations.push(4);
-                        mul_keys.push(&keys[find_seq]);
-                        assertions.push(should_exist);
-                    } else {
-                        // due to upserts, we may or may not have updated an existing key
-                    }
-    
-                    // Twist the LCG since we used find_seq
-                    find_seq = (a * find_seq + c) & find_seq_mask;
-                }
-                
-                Operation::Upsert => {
-                    
+                    erase_seq += 1;
                 }
             }
-            // If 100 operations are complete, execute.
-            if operations.len() == 100 {
-                let results = tbl.execute(operations, mul_keys);
-                for index in 0..assertions.len() {
-                    assert_eq!(results[index], assertions[index], "Something failed");
+
+            Operation::Update => {
+                // Same as find, except we update to the same default value
+                let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
+                if find_seq >= erase_seq {
+                    operations.push(4);
+                    mul_keys.push(&keys[find_seq]);
+                    assertions.push(should_exist);
+                } else {
+                    // due to upserts, we may or may not have updated an existing key
                 }
-                operations = Vec::new();
-                mul_keys = Vec::new();
-                assertions = Vec::new();
+
+                // Twist the LCG since we used find_seq
+                find_seq = (a * find_seq + c) & find_seq_mask;
             }
+
+            Operation::Upsert => {}
+        }
+        // If 100 operations are complete, execute.
+        if operations.len() == 100 {
+            let results = tbl.execute(operations, mul_keys);
+            for index in 0..assertions.len() {
+                assert_eq!(results[index], assertions[index], "Something failed");
+            }
+            operations = Vec::new();
+            mul_keys = Vec::new();
+            assertions = Vec::new();
+        }
     }
 
     if operations.len() != 0 {
