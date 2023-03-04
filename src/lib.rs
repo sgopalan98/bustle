@@ -111,6 +111,10 @@ pub struct Workload {
     /// Total number of operations as a multiple of the initial capacity.
     ops_f: f64,
 
+
+    /// No of operations to be executed at a stretch
+    ops_st: usize,
+
     /// Number of threads to run the benchmark with.
     threads: usize,
 
@@ -204,6 +208,7 @@ impl Workload {
             initial_cap_log2: 25,
             prefill_f: 0.0,
             ops_f: 0.75,
+            ops_st: 1,
             threads,
             seed: None,
         }
@@ -301,6 +306,7 @@ impl Workload {
 
         let initial_capacity = 1 << self.initial_cap_log2;
         let total_ops = (initial_capacity as f64 * self.ops_f) as usize;
+        let ops_st = self.ops_st.clone();
 
         let seed = self.seed.unwrap_or_else(rand::random);
         let mut rng: rand::rngs::SmallRng = rand::SeedableRng::from_seed(seed);
@@ -365,7 +371,7 @@ impl Workload {
                         break;
                     }
 
-                    let max_index = std::cmp::min(start_index + 100, prefill_per_thread);
+                    let max_index = std::cmp::min(start_index + ops_st, prefill_per_thread);
 
                     let mut operations = Vec::new();
                     let mut mul_keys = Vec::new();
@@ -380,7 +386,7 @@ impl Workload {
                         assert!(result);
                     }
 
-                    start_index = start_index + 100;
+                    start_index = start_index + ops_st;
                 }
 
                 let close_operation = Vec::new();
@@ -410,6 +416,7 @@ impl Workload {
                     &keys,
                     &op_mix,
                     ops_per_thread,
+                    ops_st,
                     prefill_per_thread,
                     barrier,
                 );
@@ -573,6 +580,7 @@ fn mix_multiple<H: CollectionHandle>(
     keys: &[H::Key],
     op_mix: &[Operation],
     ops: usize,
+    ops_st : usize,
     prefilled: usize,
     barrier: Arc<Barrier>,
 ) where
@@ -671,7 +679,7 @@ fn mix_multiple<H: CollectionHandle>(
             Operation::Upsert => {}
         }
         // If 100 operations are complete, execute.
-        if operations.len() == 100 {
+        if operations.len() ==  ops_st {
             let results = tbl.execute(operations, mul_keys);
             for index in 0..assertions.len() {
                 assert_eq!(results[index], assertions[index], "Something failed");
