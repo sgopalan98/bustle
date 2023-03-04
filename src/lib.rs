@@ -140,6 +140,9 @@ pub trait Collection: Send + Sync + 'static {
     /// Allocate a new instance of the benchmark target with the given capacity and also no of threads.
     fn with_capacity_and_threads(capacity: usize, no_of_threads: usize) -> Self;
 
+    /// Allocate a new instance of the benchmark target with the given capacity, no of threads and no of operations at a stretch.
+    fn with_capacity_and_threads_and_ops_st(capacity: usize, no_of_threads: usize, ops_st: usize) -> Self;
+
     /// Pin a thread-local handle to the concurrent collection under test.
     fn pin(&self) -> Self::Handle;
 }
@@ -364,7 +367,7 @@ impl Workload {
             .collect();
 
         info!("constructing initial table");
-        let table = Arc::new(T::with_capacity_and_threads(initial_capacity, self.threads));
+        let table = Arc::new(T::with_capacity_and_threads_and_ops_st(initial_capacity, self.threads, ops_st));
 
         // And fill it
         let prefill_per_thread = prefill / self.threads;
