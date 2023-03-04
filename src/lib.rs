@@ -238,6 +238,15 @@ impl Workload {
         self
     }
 
+
+    /// Set the no of operations that need to be performed at a stretch
+    ///
+    /// Defaults to 1.
+    pub fn operations_at_a_stretch(&mut self, ops_st : usize) -> &mut Self {
+        self.ops_st = ops_st;
+        self
+    }
+
     /// Set the number of operations to run as a multiple of the initial capacity.
     ///
     /// This value can exceed 1.0.
