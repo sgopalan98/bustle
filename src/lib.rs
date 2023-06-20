@@ -137,11 +137,14 @@ pub trait Collection: Send + Sync + 'static {
     /// Allocate a new instance of the benchmark target with the given capacity.
     fn with_capacity(capacity: usize) -> Self;
 
-    /// Allocate a new instance of the benchmark target with the given capacity and also no of threads.
-    fn with_capacity_and_threads(capacity: usize, no_of_threads: usize) -> Self;
+    /// Allocate a new instance of the benchmark target with the given capacity and option to include additional_params.
+    fn with_capacity_additional_params(capacity: usize, additional_params: Vec<u8>) -> Self;
 
-    /// Allocate a new instance of the benchmark target with the given capacity, no of threads and no of operations at a stretch.
-    fn with_capacity_and_threads_and_ops_st(capacity: usize, no_of_threads: usize, ops_st: usize) -> Self;
+    // /// Allocate a new instance of the benchmark target with the given capacity and also no of threads.
+    // fn with_capacity_and_threads(capacity: usize, no_of_threads: usize) -> Self;
+
+    // /// Allocate a new instance of the benchmark target with the given capacity, no of threads and no of operations at a stretch.
+    // fn with_capacity_and_threads_and_ops_st(capacity: usize, no_of_threads: usize, ops_st: usize) -> Self;
 
     /// Pin a thread-local handle to the concurrent collection under test.
     fn pin(&self) -> Self::Handle;
@@ -283,7 +286,7 @@ impl Workload {
     where
         <T::Handle as CollectionHandle>::Key: Send + std::fmt::Debug,
     {
-        let m = self.run_silently::<T>();
+        let m = self.run_silently::<T>(None);
 
         // TODO: do more with this information
         // TODO: collect statistics per operation type
@@ -306,7 +309,7 @@ impl Workload {
     /// The key type must be `Debug` so that we can print meaningful errors if an assertion is
     /// violated during the benchmark.
     #[allow(clippy::cognitive_complexity)]
-    pub fn run_silently<T: Collection>(&self) -> Measurement
+    pub fn run_silently<T: Collection>(&self, additional_params: Option<Vec<u8>>) -> Measurement
     where
         <T::Handle as CollectionHandle>::Key: Send + std::fmt::Debug,
     {
@@ -367,7 +370,11 @@ impl Workload {
             .collect();
 
         info!("constructing initial table");
-        let table = Arc::new(T::with_capacity_and_threads_and_ops_st(initial_capacity, self.threads, ops_st));
+
+        let table  = match additional_params {
+            Some(additional_params) => Arc::new(T::with_capacity_additional_params(initial_capacity, additional_params)),
+            None => Arc::new(T::with_capacity(initial_capacity))
+        };
 
         // And fill it
         let prefill_per_thread = prefill / self.threads;
@@ -393,6 +400,10 @@ impl Workload {
                         mul_keys.push(&keys[index]);
                     }
 
+                    if (operations.len() < ops_st) {
+                        operations.resize(ops_st, 0);
+                    }
+
                     let results = table.execute(operations, mul_keys);
                     for result in results {
                         assert!(result);
@@ -401,7 +412,7 @@ impl Workload {
                     start_index = start_index + ops_st;
                 }
 
-                let close_operation = Vec::new();
+                let close_operation = vec![0u8; ops_st];
                 let close_key = Vec::new();
                 table.execute(close_operation, close_key);
                 keys
@@ -432,7 +443,7 @@ impl Workload {
                     prefill_per_thread,
                     barrier,
                 );
-                let close_operation = Vec::new();
+                let close_operation = vec![0u8; ops_st];
                 let close_key = Vec::new();
                 table.execute(close_operation, close_key);
             }));
@@ -703,6 +714,10 @@ fn mix_multiple<H: CollectionHandle>(
     }
 
     if operations.len() != 0 {
+        if operations.len() < ops_st {
+            operations.resize(ops_st, 0);
+        }
+
         let results = tbl.execute(operations, mul_keys);
         for index in 0..assertions.len() {
             assert_eq!(results[index], assertions[index], "Something failed");
