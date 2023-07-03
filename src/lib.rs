@@ -119,6 +119,8 @@ pub struct Workload {
     /// If `None`, the seed is picked randomly.
     /// If `Some`, the workload is deterministic if `threads == 1`.
     seed: Option<[u8; 32]>,
+    /// No of operations executed in a single request TODO: Document & Name better
+    ops_per_req: usize,
 }
 
 /// A collection that can be benchmarked by bustle.
@@ -168,6 +170,12 @@ pub trait CollectionHandle {
     ///
     /// Should **not** insert the key if it did not exist.
     fn update(&mut self, key: &Self::Key) -> bool;
+
+
+    /// Execute mulitple operations
+    ///
+    /// Should return `true` if all oeprations execute correctly
+    fn execute_multiple(&mut self, operations: Vec<Operation>, keys: Vec<&Self::Key>) -> Vec<bool>;
 }
 
 /// Information about a measurement.
@@ -193,6 +201,7 @@ impl Workload {
             initial_cap_log2: 25,
             prefill_f: 0.0,
             ops_f: 0.75,
+            ops_per_req: 1,
             threads,
             seed: None,
         }
@@ -219,6 +228,15 @@ impl Workload {
         assert!(fraction >= 0.0);
         assert!(fraction <= 1.0);
         self.prefill_f = fraction;
+        self
+    }
+
+
+    /// Set the no of operations that need to be performed at a stretch
+    ///
+    /// Defaults to 1.
+    pub fn operations_at_a_stretch(&mut self, ops_per_req : usize) -> &mut Self {
+        self.ops_per_req = ops_per_req;
         self
     }
 
@@ -290,6 +308,7 @@ impl Workload {
 
         let initial_capacity = 1 << self.initial_cap_log2;
         let total_ops = (initial_capacity as f64 * self.ops_f) as usize;
+        let ops_per_req = self.ops_per_req.clone();
 
         let seed = self.seed.unwrap_or_else(rand::random);
         let mut rng: rand::rngs::SmallRng = rand::SeedableRng::from_seed(seed);
@@ -338,7 +357,8 @@ impl Workload {
             .collect();
 
         info!("constructing initial table");
-        let table = Arc::new(T::with_capacity(initial_capacity));
+
+        let table  = Arc::new(T::with_capacity(initial_capacity));
 
         // And fill it
         let prefill_per_thread = prefill / self.threads;
@@ -347,10 +367,38 @@ impl Workload {
             let table = Arc::clone(&table);
             prefillers.push(std::thread::spawn(move || {
                 let mut table = table.pin();
-                for key in &keys[0..prefill_per_thread] {
-                    let inserted = table.insert(key);
-                    assert!(inserted);
+                let mut start_index = 0;
+
+                loop {
+                    if start_index >= prefill_per_thread {
+                        break;
+                    }
+
+                    let max_index = std::cmp::min(start_index + ops_per_req, prefill_per_thread);
+
+                    let mut operations = Vec::new();
+                    let mut mul_keys = Vec::new();
+
+                    for index in start_index..max_index {
+                        operations.push(Operation::Insert);
+                        mul_keys.push(&keys[index]);
+                    }
+
+                    // if (operations.len() < ops_per_req) {
+                    //     operations.resize(ops_per_req, 0);
+                    // }
+
+                    let results = table.execute_multiple(operations, mul_keys);
+                    for result in results {
+                        assert!(result);
+                    }
+
+                    start_index = start_index + ops_per_req;
                 }
+
+                // let close_operation = vec![0u8; ops_per_req];
+                // let close_key = Vec::new();
+                // table.execute(close_operation, close_key);
                 keys
             }));
         }
@@ -370,14 +418,18 @@ impl Workload {
             let barrier = Arc::clone(&barrier);
             mix_threads.push(std::thread::spawn(move || {
                 let mut table = table.pin();
-                mix(
+                mix_multiple(
                     &mut table,
                     &keys,
                     &op_mix,
                     ops_per_thread,
+                    ops_per_req,
                     prefill_per_thread,
                     barrier,
-                )
+                );
+                // let close_operation = vec![0u8; ops_per_req];
+                // let close_key = Vec::new();
+                // table.execute_multiple(close_operation, close_key);
             }));
         }
 
@@ -407,12 +459,18 @@ impl Workload {
     }
 }
 
+/// Operation enum TODO: Documentation better
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Operation {
+pub enum Operation {
+    /// Read Operation
     Read,
+    /// Insert Operation
     Insert,
+    /// Remove Operation
     Remove,
+    /// Update Operation
     Update,
+    /// Upsert Operation
     Upsert,
 }
 
@@ -526,6 +584,134 @@ fn mix<H: CollectionHandle>(
                     insert_seq += 1;
                 }
             }
+        }
+    }
+}
+
+
+fn mix_multiple<H: CollectionHandle>(
+    tbl: &mut H,
+    keys: &[H::Key],
+    op_mix: &[Operation],
+    ops: usize,
+    ops_per_req : usize,
+    prefilled: usize,
+    barrier: Arc<Barrier>,
+) where
+    H::Key: std::fmt::Debug,
+{
+    // Invariant: erase_seq <= insert_seq
+    // Invariant: insert_seq < numkeys
+    let nkeys = keys.len();
+    let mut erase_seq = 0;
+    let mut insert_seq = prefilled;
+    let mut find_seq = 0;
+
+    // We're going to use a very simple LCG to pick random keys.
+    // We want it to be _super_ fast so it doesn't add any overhead.
+    assert!(nkeys.is_power_of_two());
+    assert!(nkeys > 4);
+    assert_eq!(op_mix.len(), 100);
+    let a = nkeys / 2 + 1;
+    let c = nkeys / 4 - 1;
+    let find_seq_mask = nkeys - 1;
+
+    // The elapsed time is measured by the lifetime of `workload_scope`.
+    let workload_scope = scopeguard::guard(barrier, |barrier| {
+        barrier.wait();
+    });
+    workload_scope.wait();
+
+    let mut operations = Vec::new();
+    let mut mul_keys = Vec::new();
+    let mut assertions = Vec::new();
+
+    for (i, op) in (0..(ops / op_mix.len()))
+        .flat_map(|_| op_mix.iter())
+        .enumerate()
+    {
+        if i == ops {
+            break;
+        }
+
+        match op {
+            Operation::Read => {
+                let should_find = find_seq >= erase_seq && find_seq < insert_seq;
+                if find_seq >= erase_seq {
+                    operations.push(Operation::Read);
+                    mul_keys.push(&keys[find_seq]);
+                    assertions.push(should_find);
+                } else {
+                    // due to upserts, we may _or may not_ find the key
+                }
+
+                // Twist the LCG since we used find_seq
+                find_seq = (a * find_seq + c) & find_seq_mask;
+            }
+
+            Operation::Insert => {
+                operations.push(Operation::Insert);
+                mul_keys.push(&keys[insert_seq]);
+                assertions.push(true);
+
+                insert_seq += 1;
+            }
+
+            Operation::Remove => {
+                if erase_seq == insert_seq {
+                    // If `erase_seq` == `insert_eq`, the table should be empty.
+                    // let removed = tbl.remove(&keys[find_seq]);
+                    operations.push(Operation::Remove);
+                    mul_keys.push(&keys[find_seq]);
+                    assertions.push(false);
+
+                    // Twist the LCG since we used find_seq
+                    find_seq = (a * find_seq + c) & find_seq_mask;
+                } else {
+                    operations.push(Operation::Remove);
+                    mul_keys.push(&keys[erase_seq]);
+                    assertions.push(true);
+                    erase_seq += 1;
+                }
+            }
+
+            Operation::Update => {
+                // Same as find, except we update to the same default value
+                let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
+                if find_seq >= erase_seq {
+                    operations.push(Operation::Update);
+                    mul_keys.push(&keys[find_seq]);
+                    assertions.push(should_exist);
+                } else {
+                    // due to upserts, we may or may not have updated an existing key
+                }
+
+                // Twist the LCG since we used find_seq
+                find_seq = (a * find_seq + c) & find_seq_mask;
+            }
+
+            Operation::Upsert => {}
+        }
+        // If 100 operations are complete, execute.
+        if operations.len() ==  ops_per_req {
+            let results = tbl.execute_multiple(operations, mul_keys);
+            for index in 0..assertions.len() {
+                assert_eq!(results[index], assertions[index], "Something failed");
+            }
+            operations = Vec::new();
+            mul_keys = Vec::new();
+            assertions = Vec::new();
+        }
+    }
+
+    if operations.len() != 0 {
+        // if operations.len() < ops_per_req {
+        //     operations.resize(ops_per_req, 0);
+        // }
+
+        let results = tbl.execute_multiple(operations, mul_keys);
+        for index in 0..assertions.len() {
+            assert_eq!(results[index], assertions[index], "Something failed");
         }
     }
 }
