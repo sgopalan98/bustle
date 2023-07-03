@@ -273,7 +273,7 @@ impl Workload {
     where
         <T::Handle as CollectionHandle>::Key: Send + std::fmt::Debug,
     {
-        let m = self.run_silently::<T>();
+        let m = self.run_silently::<T>(None);
 
         // TODO: do more with this information
         // TODO: collect statistics per operation type
@@ -296,7 +296,7 @@ impl Workload {
     /// The key type must be `Debug` so that we can print meaningful errors if an assertion is
     /// violated during the benchmark.
     #[allow(clippy::cognitive_complexity)]
-    pub fn run_silently<T: Collection>(&self) -> Measurement
+    pub fn run_silently<T: Collection>(&self, table: Option<T>) -> Measurement
     where
         <T::Handle as CollectionHandle>::Key: Send + std::fmt::Debug,
     {
@@ -358,7 +358,10 @@ impl Workload {
 
         info!("constructing initial table");
 
-        let table  = Arc::new(T::with_capacity(initial_capacity));
+        let table = match table {
+            Some(table) => Arc::new(table),
+            None => Arc::new(T::with_capacity(initial_capacity)),
+        };
 
         // And fill it
         let prefill_per_thread = prefill / self.threads;
