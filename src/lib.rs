@@ -35,6 +35,22 @@ use tracing::{debug, info, info_span};
 /// A workload mix configration.
 ///
 /// The sum of the fields must add to 100.
+#[derive(Clone, Debug)]
+pub struct NetworkConfig {
+    /// Address of the server "ip:port"
+    pub address: String,
+    /// No of client threads
+    pub client_threads: usize,
+    /// No of server threads
+    pub server_threads: usize,
+    /// No of operations per request
+    pub ops_per_req: usize
+}
+
+
+/// A workload mix configration.
+///
+/// The sum of the fields must add to 100.
 #[derive(Clone, Copy, Debug)]
 pub struct Mix {
     /// The percentage of operations in the mix that are reads.
@@ -135,9 +151,9 @@ pub trait Collection: Send + Sync + 'static {
     /// Allocate a new instance of the benchmark target with the given capacity.
     fn with_capacity(capacity: usize) -> Self;
 
-    /// Allocate 'additional_capacity' to the capacity of the Collection.
-    fn reserve(&mut self, additional_capacity: usize);
-
+    /// Allocate a new instance of the benchmark target with the given capacity in a server.
+    fn in_network_with_capacity(network_config: NetworkConfig, capacity: usize) -> Self;
+    
     /// Pin a thread-local handle to the concurrent collection under test.
     fn pin(&self) -> Self::Handle;
 }
@@ -299,7 +315,7 @@ impl Workload {
     /// The key type must be `Debug` so that we can print meaningful errors if an assertion is
     /// violated during the benchmark.
     #[allow(clippy::cognitive_complexity)]
-    pub fn run_silently<T: Collection>(&self, table: Option<T>) -> Measurement // TODO: Rename it to initialized_table
+    pub fn run_silently<T: Collection>(&self, network_config: Option<NetworkConfig>) -> Measurement
     where
         <T::Handle as CollectionHandle>::Key: Send + std::fmt::Debug,
     {
@@ -361,11 +377,8 @@ impl Workload {
 
         info!("constructing initial table");
 
-        let table = match table {
-            Some(mut table) => {
-                table.reserve(initial_capacity);
-                Arc::new(table)
-            },
+        let table = match network_config {
+            Some(_) => Arc::new(T::in_network_with_capacity(network_config.unwrap(), initial_capacity)),
             None => Arc::new(T::with_capacity(initial_capacity)),
         };
 
@@ -405,9 +418,9 @@ impl Workload {
                     start_index = start_index + ops_per_req;
                 }
 
-                // let close_operation = vec![0u8; ops_per_req];
-                // let close_key = Vec::new();
-                // table.execute(close_operation, close_key);
+                let close_operation = vec![OperationType::End];
+                let close_key = Vec::new();
+                table.execute_multiple(close_operation, close_key);
                 keys
             }));
         }
@@ -436,9 +449,9 @@ impl Workload {
                     prefill_per_thread,
                     barrier,
                 );
-                // let close_operation = vec![0u8; ops_per_req];
-                // let close_key = Vec::new();
-                // table.execute_multiple(close_operation, close_key);
+                let close_operation = vec![OperationType::End];
+                let close_key = Vec::new();
+                table.execute_multiple(close_operation, close_key);
             }));
         }
 
@@ -481,6 +494,8 @@ pub enum OperationType {
     Update,
     /// Upsert OperationType
     Upsert,
+    /// End OperationType
+    End
 }
 
 fn mix<H: CollectionHandle>(
@@ -593,6 +608,7 @@ fn mix<H: CollectionHandle>(
                     insert_seq += 1;
                 }
             }
+            OperationType::End => {},
         }
     }
 }
@@ -700,6 +716,7 @@ fn mix_multiple<H: CollectionHandle>(
             }
 
             OperationType::Upsert => {}
+            OperationType::End => {},
         }
         // If 100 operations are complete, execute.
         if operations.len() ==  ops_per_req {
