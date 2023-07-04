@@ -135,6 +135,9 @@ pub trait Collection: Send + Sync + 'static {
     /// Allocate a new instance of the benchmark target with the given capacity.
     fn with_capacity(capacity: usize) -> Self;
 
+    /// Allocate 'additional_capacity' to the capacity of the Collection.
+    fn reserve(&mut self, additional_capacity: usize);
+
     /// Pin a thread-local handle to the concurrent collection under test.
     fn pin(&self) -> Self::Handle;
 }
@@ -359,7 +362,10 @@ impl Workload {
         info!("constructing initial table");
 
         let table = match table {
-            Some(table) => Arc::new(table),
+            Some(mut table) => {
+                table.reserve(initial_capacity);
+                Arc::new(table)
+            },
             None => Arc::new(T::with_capacity(initial_capacity)),
         };
 
