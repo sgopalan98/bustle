@@ -178,7 +178,7 @@ pub trait CollectionHandle {
     /// Execute mulitple operations
     ///
     /// Should return `true` if all oeprations execute correctly
-    fn execute_multiple(&mut self, operations: Vec<Operation>, keys: Vec<&Self::Key>) -> Vec<bool>;
+    fn execute_multiple(&mut self, operations: Vec<OperationType>, keys: Vec<&Self::Key>) -> Vec<bool>;
 }
 
 /// Information about a measurement.
@@ -299,7 +299,7 @@ impl Workload {
     /// The key type must be `Debug` so that we can print meaningful errors if an assertion is
     /// violated during the benchmark.
     #[allow(clippy::cognitive_complexity)]
-    pub fn run_silently<T: Collection>(&self, table: Option<T>) -> Measurement
+    pub fn run_silently<T: Collection>(&self, table: Option<T>) -> Measurement // TODO: Rename it to initialized_table
     where
         <T::Handle as CollectionHandle>::Key: Send + std::fmt::Debug,
     {
@@ -323,11 +323,11 @@ impl Workload {
 
         info!("generating operation mix");
         let mut op_mix = Vec::with_capacity(100);
-        op_mix.append(&mut vec![Operation::Read; usize::from(self.mix.read)]);
-        op_mix.append(&mut vec![Operation::Insert; usize::from(self.mix.insert)]);
-        op_mix.append(&mut vec![Operation::Remove; usize::from(self.mix.remove)]);
-        op_mix.append(&mut vec![Operation::Update; usize::from(self.mix.update)]);
-        op_mix.append(&mut vec![Operation::Upsert; usize::from(self.mix.upsert)]);
+        op_mix.append(&mut vec![OperationType::Read; usize::from(self.mix.read)]);
+        op_mix.append(&mut vec![OperationType::Insert; usize::from(self.mix.insert)]);
+        op_mix.append(&mut vec![OperationType::Remove; usize::from(self.mix.remove)]);
+        op_mix.append(&mut vec![OperationType::Update; usize::from(self.mix.update)]);
+        op_mix.append(&mut vec![OperationType::Upsert; usize::from(self.mix.upsert)]);
         op_mix.shuffle(&mut rng);
 
         info!("generating key space");
@@ -389,7 +389,7 @@ impl Workload {
                     let mut mul_keys = Vec::new();
 
                     for index in start_index..max_index {
-                        operations.push(Operation::Insert);
+                        operations.push(OperationType::Insert);
                         mul_keys.push(&keys[index]);
                     }
 
@@ -468,25 +468,25 @@ impl Workload {
     }
 }
 
-/// Operation enum TODO: Documentation better
+/// OperationType enum TODO: Documentation better
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Operation {
-    /// Read Operation
+pub enum OperationType {
+    /// Read OperationType
     Read,
-    /// Insert Operation
+    /// Insert OperationType
     Insert,
-    /// Remove Operation
+    /// Remove OperationType
     Remove,
-    /// Update Operation
+    /// Update OperationType
     Update,
-    /// Upsert Operation
+    /// Upsert OperationType
     Upsert,
 }
 
 fn mix<H: CollectionHandle>(
     tbl: &mut H,
     keys: &[H::Key],
-    op_mix: &[Operation],
+    op_mix: &[OperationType],
     ops: usize,
     prefilled: usize,
     barrier: Arc<Barrier>,
@@ -524,7 +524,7 @@ fn mix<H: CollectionHandle>(
         }
 
         match op {
-            Operation::Read => {
+            OperationType::Read => {
                 let should_find = find_seq >= erase_seq && find_seq < insert_seq;
                 let found = tbl.get(&keys[find_seq]);
                 if find_seq >= erase_seq {
@@ -540,7 +540,7 @@ fn mix<H: CollectionHandle>(
                 // Twist the LCG since we used find_seq
                 find_seq = (a * find_seq + c) & find_seq_mask;
             }
-            Operation::Insert => {
+            OperationType::Insert => {
                 let new_key = tbl.insert(&keys[insert_seq]);
                 assert!(
                     new_key,
@@ -549,7 +549,7 @@ fn mix<H: CollectionHandle>(
                 );
                 insert_seq += 1;
             }
-            Operation::Remove => {
+            OperationType::Remove => {
                 if erase_seq == insert_seq {
                     // If `erase_seq` == `insert_eq`, the table should be empty.
                     let removed = tbl.remove(&keys[find_seq]);
@@ -567,7 +567,7 @@ fn mix<H: CollectionHandle>(
                     erase_seq += 1;
                 }
             }
-            Operation::Update => {
+            OperationType::Update => {
                 // Same as find, except we update to the same default value
                 let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
                 let updated = tbl.update(&keys[find_seq]);
@@ -580,7 +580,7 @@ fn mix<H: CollectionHandle>(
                 // Twist the LCG since we used find_seq
                 find_seq = (a * find_seq + c) & find_seq_mask;
             }
-            Operation::Upsert => {
+            OperationType::Upsert => {
                 // Pick a number from the full distribution, but cap it to the insert_seq, so we
                 // don't insert a number greater than insert_seq.
                 let n = std::cmp::min(find_seq, insert_seq);
@@ -601,7 +601,7 @@ fn mix<H: CollectionHandle>(
 fn mix_multiple<H: CollectionHandle>(
     tbl: &mut H,
     keys: &[H::Key],
-    op_mix: &[Operation],
+    op_mix: &[OperationType],
     ops: usize,
     ops_per_req : usize,
     prefilled: usize,
@@ -644,10 +644,10 @@ fn mix_multiple<H: CollectionHandle>(
         }
 
         match op {
-            Operation::Read => {
+            OperationType::Read => {
                 let should_find = find_seq >= erase_seq && find_seq < insert_seq;
                 if find_seq >= erase_seq {
-                    operations.push(Operation::Read);
+                    operations.push(OperationType::Read);
                     mul_keys.push(&keys[find_seq]);
                     assertions.push(should_find);
                 } else {
@@ -658,37 +658,37 @@ fn mix_multiple<H: CollectionHandle>(
                 find_seq = (a * find_seq + c) & find_seq_mask;
             }
 
-            Operation::Insert => {
-                operations.push(Operation::Insert);
+            OperationType::Insert => {
+                operations.push(OperationType::Insert);
                 mul_keys.push(&keys[insert_seq]);
                 assertions.push(true);
 
                 insert_seq += 1;
             }
 
-            Operation::Remove => {
+            OperationType::Remove => {
                 if erase_seq == insert_seq {
                     // If `erase_seq` == `insert_eq`, the table should be empty.
                     // let removed = tbl.remove(&keys[find_seq]);
-                    operations.push(Operation::Remove);
+                    operations.push(OperationType::Remove);
                     mul_keys.push(&keys[find_seq]);
                     assertions.push(false);
 
                     // Twist the LCG since we used find_seq
                     find_seq = (a * find_seq + c) & find_seq_mask;
                 } else {
-                    operations.push(Operation::Remove);
+                    operations.push(OperationType::Remove);
                     mul_keys.push(&keys[erase_seq]);
                     assertions.push(true);
                     erase_seq += 1;
                 }
             }
 
-            Operation::Update => {
+            OperationType::Update => {
                 // Same as find, except we update to the same default value
                 let should_exist = find_seq >= erase_seq && find_seq < insert_seq;
                 if find_seq >= erase_seq {
-                    operations.push(Operation::Update);
+                    operations.push(OperationType::Update);
                     mul_keys.push(&keys[find_seq]);
                     assertions.push(should_exist);
                 } else {
@@ -699,7 +699,7 @@ fn mix_multiple<H: CollectionHandle>(
                 find_seq = (a * find_seq + c) & find_seq_mask;
             }
 
-            Operation::Upsert => {}
+            OperationType::Upsert => {}
         }
         // If 100 operations are complete, execute.
         if operations.len() ==  ops_per_req {
