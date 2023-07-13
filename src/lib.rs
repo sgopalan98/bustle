@@ -658,6 +658,7 @@ fn mix_multiple<H: CollectionHandle>(
         .flat_map(|_| op_mix.iter())
         .enumerate()
     {
+        println!("i is {}", i);
         if i == ops {
             break;
         }
