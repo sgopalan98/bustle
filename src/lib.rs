@@ -749,4 +749,5 @@ fn mix_multiple<H: CollectionHandle>(
         }
     }
     println!("bye bye from mix multiple");
+    return;
 }
