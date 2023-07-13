@@ -746,6 +746,6 @@ fn mix_multiple<H: CollectionHandle>(
     println!("bye bye from mix multiple");
     let close_operation = vec![OperationType::End];
     let close_key = Vec::new();
-    table.execute_multiple(close_operation, close_key);
+    tbl.execute_multiple(close_operation, close_key);
     return;
 }
