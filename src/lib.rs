@@ -421,7 +421,6 @@ impl Workload {
                 
                 let close_operation = vec![OperationType::End];
                 let close_key = Vec::new();
-                println!("going to close-  prefill");
                 table.execute_multiple(close_operation, close_key);
                 keys
             }));
@@ -729,21 +728,17 @@ fn mix_multiple<H: CollectionHandle>(
             assertions = Vec::new();
         }
     }
-    println!("main loop is done");
 
     if operations.len() != 0 {
-        println!("going inside <100 loop");
         // if operations.len() < ops_per_req {
         //     operations.resize(ops_per_req, 0);
         // }
 
         let results = tbl.execute_multiple(operations, mul_keys);
-        println!("execution done");
         for index in 0..assertions.len() {
             assert_eq!(results[index], assertions[index], "Something failed");
         }
     }
-    println!("bye bye from mix multiple");
     let close_operation = vec![OperationType::End];
     let close_key = Vec::new();
     tbl.execute_multiple(close_operation, close_key);
