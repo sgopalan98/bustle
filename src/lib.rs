@@ -451,10 +451,10 @@ impl Workload {
                     prefill_per_thread,
                     barrier,
                 );
-                println!("before going to close-  workload");
+                info!("before going to close-  workload");
                 let close_operation = vec![OperationType::End];
                 let close_key = Vec::new();
-                println!("going to close-  workload");
+                info!("going to close-  workload");
                 table.execute_multiple(close_operation, close_key);
             }));
         }
