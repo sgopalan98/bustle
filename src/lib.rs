@@ -451,11 +451,6 @@ impl Workload {
                     prefill_per_thread,
                     barrier,
                 );
-                info!("before going to close-  workload");
-                let close_operation = vec![OperationType::End];
-                let close_key = Vec::new();
-                info!("going to close-  workload");
-                table.execute_multiple(close_operation, close_key);
             }));
         }
 
@@ -749,5 +744,8 @@ fn mix_multiple<H: CollectionHandle>(
         }
     }
     println!("bye bye from mix multiple");
+    let close_operation = vec![OperationType::End];
+    let close_key = Vec::new();
+    table.execute_multiple(close_operation, close_key);
     return;
 }
