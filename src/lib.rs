@@ -418,8 +418,10 @@ impl Workload {
                     start_index = start_index + ops_per_req;
                 }
 
+                
                 let close_operation = vec![OperationType::End];
                 let close_key = Vec::new();
+                println!("going to close-  prefill");
                 table.execute_multiple(close_operation, close_key);
                 keys
             }));
@@ -451,6 +453,7 @@ impl Workload {
                 );
                 let close_operation = vec![OperationType::End];
                 let close_key = Vec::new();
+                println!("going to close-  workload");
                 table.execute_multiple(close_operation, close_key);
             }));
         }
